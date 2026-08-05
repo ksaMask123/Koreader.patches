@@ -39,6 +39,8 @@
 --   v2.4.12 诗词板块再次扩容：追加 诗词第三版.txt（100→200 条）。第三版 104 条剔除 3 条
 --           与第二版完全重复项 + 1 条与既有同诗句重复句（苏轼《定风波》），净增 100 条，
 --           总量精确 200 条；保留李贺《金铜仙人辞汉歌》独立短句「天若有情天亦老」
+--   v2.4.13 修复菜单样式左上角"点单设备：设备："双前缀：getDeviceInfoString 增加 prefix
+--           入参（墨痕默认「设备：」，菜单传入「点单设备：」），消除调用点二次拼接
 --   v2.4.5  轮流模式泛化为 N 样式顺序循环（film→inkstain→menu），首次调用回落首样式
 --   v2.4.4  墨痕底部布局改为表格锚定：表格区恒按 5 本预留高度（无书/少书时留白、
 --           分隔线位置稳定），分隔线紧贴书单底部仅留小缝隙；底部区块整体上移、
@@ -3710,10 +3712,11 @@ local function readInkStainStats(days, top_n)
     return result
 end
 
--- 生成设备信息字符串：型号 + 屏幕尺寸（英寸）+ 分辨率 + DPI
--- 示例："Kobo Libra 2  4.9寸  824×1200  300dpi"
--- 全部字段带 pcall/类型保护，任何一项缺失自动省略，绝不让渲染崩溃
-local function getDeviceInfoString()
+-- 拼接设备信息字符串：型号 + 屏幕尺寸（英寸）+ 分辨率 + DPI（字段缺失自动省略）
+-- 入参：prefix 可选前缀标签（墨痕默认「设备：」；菜单样式传「点单设备：」）
+--       -- 修改：v2.4.13 前缀参数化，修复菜单样式"点单设备：设备："双前缀重复
+local function getDeviceInfoString(prefix)
+    prefix = prefix or "设备："
     -- 1) 设备型号：优先 Device.model（各平台均已填充），异常回退 "未知设备"
     local model = "未知设备"
     local ok, m = pcall(function() return Device.model end)
@@ -3736,7 +3739,7 @@ local function getDeviceInfoString()
     end
 
     -- 4) 拼接：缺失的字段自动省略，不含中文标点，保证小屏/窄栏不溢出
-    local parts = { "设备：" .. truncate(model, 24) }
+    local parts = { prefix .. truncate(model, 24) }
     if diag_inch then
         table.insert(parts, string.format("%.1f寸", diag_inch))
     end
@@ -3796,7 +3799,8 @@ local function buildInkStainPng(stats, opts)
         -- 需求7：仅显示当天日期（年.月.日），"时间"改为"下单时间"
         ctx.date_line = "下单时间：" .. os.date("%Y.%m.%d")
         -- 需求9："设备"改为"点单设备"，仍显示真实设备信息
-        ctx.device_line = "点单设备：" .. getDeviceInfoString()
+        -- -- 修改：v2.4.13 前缀由 getDeviceInfoString 传入，修复"点单设备：设备："双前缀
+        ctx.device_line = getDeviceInfoString("点单设备：")
         -- 需求8："时长"改为"总计光临本店"（-- 修改：v2.4.9 时间统一换算为"天"为单位显示）
         ctx.duration_line = "总计光临本店：" .. formatDurationDays(stats.total_seconds)
         -- 需求4："书单"改为"菜单"（-- 修改：v2.4.11 "菜单"→"菜单：5份"，右上角与"总计光临本店"同行右对齐）
