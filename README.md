@@ -121,7 +121,7 @@ A：不会。所有渲染在内存中完成，仅在显示时消耗少量 CPU，
 
 ## 🙏 致谢
 
-本补丁整合了 [inkstain.koplugin](https://github.com/Estela-Zelin84/inkstain.koplugin)) 的墨痕壁纸引擎，并使用了其字体和二维码资源。感谢 KOReader 社区及原作者。
+本补丁整合了 [inkstain.koplugin](https://github.com/Estela-Zelin84/inkstain.koplugin)的墨痕壁纸引擎。感谢 KOReader 社区及原作者Estela-Zelin84。
 
 ---
 
