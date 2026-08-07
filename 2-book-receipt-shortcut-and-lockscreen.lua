@@ -41,6 +41,15 @@
 --           总量精确 200 条；保留李贺《金铜仙人辞汉歌》独立短句「天若有情天亦老」
 --   v2.4.13 修复菜单样式左上角"点单设备：设备："双前缀：getDeviceInfoString 增加 prefix
 --           入参（墨痕默认「设备：」，菜单传入「点单设备：」），消除调用点二次拼接
+--   v2.5.0  手势/锁屏样式独立配置（非对称解耦）：手势沿用全局键（零改动零回归），
+--           锁屏新增 book_receipt_lockscreen_{mode,style,toggle_state} 独立键，
+--           首次锁屏从旧全局键单向迁移（修复旧版仅开随机开关时迁移后随机偏好丢失的隐患）；
+--           菜单拆分"手势调出样式/锁屏壁纸样式"双通道子菜单；
+--           墨痕统计周期/书单数量、诗句轮换、内容与背景保持两通道共享（已在菜单帮助注明）
+--   v2.5.1  修复手势/锁屏样式分离未生效：Screensaver.show 的 buildReceipt 调用漏传
+--           context 导致锁屏固定显示手势样式（锁屏"轮流出现"失效）；buildReceipt 改为
+--           调用方解析一次 style 后直接传入，同时根治轮流模式被 is_stat_based 预检与
+--           渲染双重推进跳样式的隐患（锁屏轮流由跳档修复为顺序推进）
 --   v2.4.5  轮流模式泛化为 N 样式顺序循环（film→inkstain→menu），首次调用回落首样式
 --   v2.4.4  墨痕底部布局改为表格锚定：表格区恒按 5 本预留高度（无书/少书时留白、
 --           分隔线位置稳定），分隔线紧贴书单底部仅留小缝隙；底部区块整体上移、
@@ -133,6 +142,10 @@ do
         ["Sleep message"] = "设置休眠状态显示的文字",
         ["Book receipt settings"] = "阅读摘要设置",
         ["Style"] = "显示风格",
+        -- 修改：v2.5.0 手势/锁屏样式独立设置入口文案
+        ["Gesture style"] = "手势调出样式",
+        ["Lockscreen style"] = "锁屏壁纸样式",
+        ["Gesture and lockscreen styles are configured independently. Ink stain stats period/book list size, poem rotation, content and background are shared between the two."] = "手势与锁屏样式可独立配置；墨痕统计周期/书单数量、诗句轮换、内容与背景为两通道共享设置。",
         -- 墨痕壁纸相关（新增）
         ["Ink stain"] = "墨痕壁纸",
         ["Order Slip"] = "留台单", -- 菜单样式名（-- 修改：v2.4.5）
@@ -212,7 +225,13 @@ local K = {
     STYLE_SETTING = "book_receipt_style",
     RANDOM_STYLE = "book_receipt_random_style",
     STYLE_MODE_SETTING = "book_receipt_style_mode",          -- 出现方式：fixed 固定 / random 随机 / alternate 轮流
-    STYLE_TOGGLE_STATE = "book_receipt_style_toggle_state",  -- 轮流模式当前状态（上次展示的样式，跨手势/锁屏共享）
+    STYLE_TOGGLE_STATE = "book_receipt_style_toggle_state",  -- 轮流模式当前状态（上次展示的样式，手势专用；锁屏见下）
+    -- 修改：v2.5.0 锁屏样式独立键——手势沿用上方 book_receipt_style* 全局键（语义不变），
+    --       锁屏使用独立键（首次锁屏时从旧全局键单向迁移，见 migrateLockscreenStyle）。
+    --       这样手势侧零改动、零回归，锁屏侧获得完全独立的样式/轮换配置。
+    LOCKSCREEN_MODE_SETTING  = "book_receipt_lockscreen_mode",
+    LOCKSCREEN_STYLE_SETTING = "book_receipt_lockscreen_style",
+    LOCKSCREEN_TOGGLE_STATE  = "book_receipt_lockscreen_toggle_state",
     QUOTE_TOGGLE_STATE = "book_receipt_quote_toggle_state",  -- 诗句轮换当前序号（每次展示推进，手势/锁屏共享）
     SLEEP_TEXT = "book_receipt_sleep_text",   -- 胶片版专用
     -- 墨痕壁纸专属设置（配置键统一带 book_receipt_ 前缀，避免全局键冲突）
@@ -483,25 +502,34 @@ local function getAllStyles()
     }
 end
 
--- 读取样式出现方式（fixed 固定 / random 随机 / alternate 轮流）
-local function getStyleMode()
-    local mode = G_reader_settings:readSetting(K.STYLE_MODE_SETTING)
+-- 归一化样式出现方式：仅接受 fixed/random/alternate，非法值回退旧版随机开关再回退 fixed
+-- 修改：v2.5.0 抽取。手势（getStyleMode）与锁屏（getLockscreenEffectiveStyle）共用同一
+--       合法性校验，保证两套键的非法值行为一致（与 v2.4.x 语义完全兼容）
+local function normalizeStyleMode(mode, legacy_random_flag)
     if mode == "random" or mode == "alternate" or mode == "fixed" then
         return mode
     end
-    -- 旧版兼容：v2.0.x 的随机开关（book_receipt_random_style）若为开，视为随机模式
-    if G_reader_settings:isTrue(K.RANDOM_STYLE) then
+    if legacy_random_flag then
         return "random"
     end
     return "fixed"
 end
 
+-- 读取手势样式出现方式（fixed 固定 / random 随机 / alternate 轮流）
+-- 修改：v2.5.0 改为复用 normalizeStyleMode，行为不变（含旧版随机开关回退）
+local function getStyleMode()
+    return normalizeStyleMode(
+        G_reader_settings:readSetting(K.STYLE_MODE_SETTING),
+        G_reader_settings:isTrue(K.RANDOM_STYLE))
+end
+
 -- 轮流模式：返回当前应展示的样式，并将轮换状态推进到下一个
--- 状态持久化于 G_reader_settings，手势调出与锁屏共享同一轮换序列
+-- 状态持久化于 G_reader_settings；手势与锁屏各用各的 toggle 键，互不消耗（-- 修改：v2.5.0）
 -- （-- 修改：v2.4.5 由「首尾二样式互切」泛化为「N 个样式顺序循环」，支持 3 样式）
-local function getAlternateStyleAndAdvance()
+-- @param toggle_key string 轮流序号持久化键（手势用 K.STYLE_TOGGLE_STATE，锁屏用 K.LOCKSCREEN_TOGGLE_STATE）
+local function getAlternateStyleAndAdvance(toggle_key)
     local styles = getAllStyles()
-    local cur = G_reader_settings:readSetting(K.STYLE_TOGGLE_STATE)
+    local cur = G_reader_settings:readSetting(toggle_key)
     local idx = 1
     for i, s in ipairs(styles) do
         if s == cur then idx = i break end
@@ -512,20 +540,54 @@ local function getAlternateStyleAndAdvance()
     end
     -- 推进到下一个样式（尾元素回绕到首个），保存后返回本次应展示的样式
     local next_style = styles[(idx % #styles) + 1]
-    G_reader_settings:saveSetting(K.STYLE_TOGGLE_STATE, next_style)
+    G_reader_settings:saveSetting(toggle_key, next_style)
     return cur
 end
 
--- 依据出现方式返回本次应展示的样式：固定 / 随机 / 轮流
+-- 依据出现方式返回本次应展示的样式：固定 / 随机 / 轮流（手势语义，沿用全局键）
 local function getEffectiveStyle()
     local mode = getStyleMode()
     if mode == "random" then
         local styles = getAllStyles()
         return styles[math.random(#styles)]
     elseif mode == "alternate" then
-        return getAlternateStyleAndAdvance()
+        return getAlternateStyleAndAdvance(K.STYLE_TOGGLE_STATE)
     else
         return normalizeReceiptStyle(G_reader_settings:readSetting(K.STYLE_SETTING))
+    end
+end
+
+-- 锁屏样式设置迁移：首次读取锁屏键时，从旧全局键单向复制（幂等）
+-- 修改：v2.5.0 新增。关键修复：迁移用的"全局有效模式"必须走 getStyleMode()（含旧版
+--       book_receipt_random_style 开关回退），而非裸 readSetting——否则老用户若仅开过
+--       旧版随机开关（未设 style_mode 键），迁移会把锁屏误置为 fixed，随机偏好永久丢失
+local function migrateLockscreenStyle()
+    if G_reader_settings:has(K.LOCKSCREEN_MODE_SETTING) then return end
+    local global_mode = getStyleMode()
+    G_reader_settings:saveSetting(K.LOCKSCREEN_MODE_SETTING, global_mode)
+    if global_mode == "fixed" then
+        G_reader_settings:saveSetting(K.LOCKSCREEN_STYLE_SETTING,
+            normalizeReceiptStyle(G_reader_settings:readSetting(K.STYLE_SETTING)))
+    end
+    local global_toggle = G_reader_settings:readSetting(K.STYLE_TOGGLE_STATE)
+    if global_toggle then
+        G_reader_settings:saveSetting(K.LOCKSCREEN_TOGGLE_STATE, global_toggle)
+    end
+    logger.info(LOG_TAG, "锁屏样式设置已从旧全局键迁移（mode=", tostring(global_mode), "）")
+end
+
+-- 锁屏样式读取：手势与锁屏完全独立（-- 修改：v2.5.0 新增）
+-- 首次调用触发 migrateLockscreenStyle 完成平滑升级；锁屏无旧版随机开关语义，legacy 传 false
+local function getLockscreenEffectiveStyle()
+    migrateLockscreenStyle()
+    local mode = normalizeStyleMode(G_reader_settings:readSetting(K.LOCKSCREEN_MODE_SETTING), false)
+    if mode == "random" then
+        local styles = getAllStyles()
+        return styles[math.random(#styles)]
+    elseif mode == "alternate" then
+        return getAlternateStyleAndAdvance(K.LOCKSCREEN_TOGGLE_STATE)
+    else
+        return normalizeReceiptStyle(G_reader_settings:readSetting(K.LOCKSCREEN_STYLE_SETTING))
     end
 end
 
@@ -4236,8 +4298,18 @@ end
 --   · inkstain：墨痕壁纸（无需活动文档）
 --   · menu：菜单样式（留台单，布局与墨痕一致，-- 修改：v2.4.5）
 --   · film：胶片票根（内部含 hasActiveDocument 检查）
-local function buildReceipt(ui, state, on_close_callback)
-    local style = getEffectiveStyle()
+-- 修改：v2.5.1 由 v2.5.0 的 context 参数改为直接接收调用方已解析的 style。
+--       原因：① 调用方（Screensaver.show）必须先解析一次 style 做 is_stat_based 判定，
+--       若本函数再自行解析，轮流模式会被推进两次、跳过一半样式（film→menu→inkstain…）；
+--       ② v2.5.0 的 context 参数在 Screensaver.show 调用点漏传后静默回退手势语义，
+--       导致锁屏固定显示手势样式（实际事故），style 显式传参可消除该歧义。
+--       style 为 nil 时回退手势解析并记 dbg 日志（便于溯源调用点漏传）。
+-- @param style string|nil 已解析的样式（film/inkstain/menu），nil 回退手势解析
+local function buildReceipt(ui, state, on_close_callback, style)
+    if style == nil then
+        style = getEffectiveStyle()
+        logger.dbg(LOG_TAG, "buildReceipt: style 未传参，回退手势样式解析")
+    end
     if style == K.STYLE_INKSTAIN or style == K.STYLE_MENU then
         return buildInkStainWidget(ui, on_close_callback, style)
     end
@@ -4253,9 +4325,11 @@ local quicklookbox = InputContainer:extend{
 }
 
 function quicklookbox:init()
+    -- 修改：v2.5.1 手势样式解析一次后传入 buildReceipt（轮流模式单次推进，与 v2.4.x 手势语义一致）
+    local style = getEffectiveStyle()
     local receipt_widget = buildReceipt(self.ui, self.state, function()
         UIManager:close(self)
-    end)
+    end, style)
     if receipt_widget then
         self[1] = receipt_widget
     else
@@ -4336,7 +4410,9 @@ Screensaver.show = function(self)
     local ui = self.ui or ReaderUI.instance
     -- 墨痕/菜单样式基于 KOReader 全局统计，无需打开书籍即可锁屏；胶片票根必须存在活动文档
     -- （-- 修改：v2.4.5 判断扩展为墨痕 + 菜单两种基于统计的样式）
-    local style = getEffectiveStyle()
+    -- 修改：v2.5.0 锁屏路径统一读取锁屏独立样式（getLockscreenEffectiveStyle），
+    --       与手势样式解耦；此处是报告方案容易遗漏的直接调用点，必须同步替换
+    local style = getLockscreenEffectiveStyle()
     local is_stat_based = style == K.STYLE_INKSTAIN or style == K.STYLE_MENU
     if not is_stat_based and not hasActiveDocument(ui) then
         showFallbackScreensaver(self, orig_screensaver_show)
@@ -4359,6 +4435,9 @@ Screensaver.show = function(self)
     end
 
     local state = ui and ui.view and ui.view.state
+    -- 修改：v2.5.1 复用上方 L4405 已解析的锁屏 style 传入 buildReceipt——
+    --       修复 v2.5.0 漏传 context 导致锁屏固定走手势样式的缺陷（锁屏"轮流出现"失效），
+    --       同时避免轮流模式被 is_stat_based 预检与渲染双重推进跳样式
     local receipt_widget = buildReceipt(ui, state, function()
         if self.close then
             self:close()
@@ -4376,7 +4455,7 @@ Screensaver.show = function(self)
             end
         end
         UIManager:setDirty(nil, "full")
-    end)
+    end, style)
 
     if receipt_widget then
         local background_color, background_widget = getReceiptBackground(ui)
@@ -4471,8 +4550,49 @@ _G.dofile = function(filepath)
                 }
             end
 
+            -- 修改：v2.5.0 锁屏样式菜单生成器——读写 book_receipt_lockscreen_* 独立键。
+            -- checked_func 需处理"迁移前回退"：锁屏键尚未迁移时按全局状态显示勾选，
+            -- 保证用户未触发首次锁屏迁移前，菜单勾选与实际行为一致。
+            local function lockscreenStyleMenuItem(text, value)
+                return {
+                    text = text,
+                    checked_func = function()
+                        local mode = G_reader_settings:has(K.LOCKSCREEN_MODE_SETTING)
+                            and G_reader_settings:readSetting(K.LOCKSCREEN_MODE_SETTING)
+                            or getStyleMode()
+                        local fixed = G_reader_settings:has(K.LOCKSCREEN_STYLE_SETTING)
+                            and G_reader_settings:readSetting(K.LOCKSCREEN_STYLE_SETTING)
+                            or G_reader_settings:readSetting(K.STYLE_SETTING)
+                        return mode == "fixed" and normalizeReceiptStyle(fixed) == value
+                    end,
+                    callback = function()
+                        G_reader_settings:saveSetting(K.LOCKSCREEN_STYLE_SETTING, value)
+                        G_reader_settings:saveSetting(K.LOCKSCREEN_MODE_SETTING, "fixed")
+                    end,
+                    radio = true,
+                }
+            end
+
+            local function lockscreenModeMenuItem(text, mode, help_text)
+                return {
+                    text = text,
+                    checked_func = function()
+                        if G_reader_settings:has(K.LOCKSCREEN_MODE_SETTING) then
+                            return G_reader_settings:readSetting(K.LOCKSCREEN_MODE_SETTING) == mode
+                        end
+                        return getStyleMode() == mode  -- 迁移前按全局状态回退
+                    end,
+                    callback = function()
+                        G_reader_settings:saveSetting(K.LOCKSCREEN_MODE_SETTING, mode)
+                    end,
+                    radio = true,
+                    help_text = help_text,
+                }
+            end
+
+            -- 手势调出样式（沿用既有全局键，逻辑零改动；-- 修改：v2.5.0 更名以与锁屏子菜单区分）
             local style_menu = {
-                text = _("Style"),
+                text = _("Gesture style"),
                 sub_item_table = {
                     styleMenuItem(_("Film strip (fixed style)"), K.STYLE_FILM),
                     styleMenuItem(_("Ink stain"), K.STYLE_INKSTAIN),
@@ -4480,6 +4600,20 @@ _G.dofile = function(filepath)
                     modeMenuItem(_("Randomize style each time"), "random",
                         _("When enabled, a random style will be used each time the receipt is shown (instead of the fixed one).")),
                     modeMenuItem(_("Alternate style each time"), "alternate",
+                        _("When enabled, styles will be alternated each time the receipt is shown (instead of a fixed one).")),
+                },
+            }
+
+            -- 锁屏壁纸样式（独立键，首次锁屏时从旧全局键单向迁移；-- 修改：v2.5.0 新增）
+            local lockscreen_style_menu = {
+                text = _("Lockscreen style"),
+                sub_item_table = {
+                    lockscreenStyleMenuItem(_("Film strip (fixed style)"), K.STYLE_FILM),
+                    lockscreenStyleMenuItem(_("Ink stain"), K.STYLE_INKSTAIN),
+                    lockscreenStyleMenuItem(_("Order Slip"), K.STYLE_MENU),
+                    lockscreenModeMenuItem(_("Randomize style each time"), "random",
+                        _("When enabled, a random style will be used each time the receipt is shown (instead of the fixed one).")),
+                    lockscreenModeMenuItem(_("Alternate style each time"), "alternate",
                         _("When enabled, styles will be alternated each time the receipt is shown (instead of a fixed one).")),
                 },
             }
@@ -4644,8 +4778,11 @@ _G.dofile = function(filepath)
             table.insert(wallpaper_submenu, 7, {
                 text = _("Book receipt settings"),
                 enabled_func = isBookReceiptEnabled,
+                help_text = _("Gesture and lockscreen styles are configured independently. Ink stain stats period/book list size, poem rotation, content and background are shared between the two."),
                 sub_item_table = {
+                    -- 修改：v2.5.0 手势与锁屏样式各自独立配置
                     style_menu,
+                    lockscreen_style_menu,
                     content_menu,
                     background_menu,
                     inkstain_settings_menu,
@@ -4655,4 +4792,22 @@ _G.dofile = function(filepath)
     end
 
     return result
+end
+
+-- ========== 测试钩子（仅供沙箱单测使用，生产环境零影响） ==========
+-- 修改：v2.5.0 新增。补丁内样式选择/迁移函数均为 local，无法从外部访问；
+-- 当且仅当设置 book_receipt_dev_test 为真时（默认不设置，生产永不触发），
+-- 将纯逻辑函数引用暴露到 _G._book_receipt_style_test，供 test_book_receipt_style.lua 断言。
+if G_reader_settings and G_reader_settings:isTrue("book_receipt_dev_test") then
+    _G._book_receipt_style_test = {
+        getEffectiveStyle = getEffectiveStyle,
+        getLockscreenEffectiveStyle = getLockscreenEffectiveStyle,
+        migrateLockscreenStyle = migrateLockscreenStyle,
+        normalizeStyleMode = normalizeStyleMode,
+        normalizeReceiptStyle = normalizeReceiptStyle,
+        getAllStyles = getAllStyles,
+        getStyleMode = getStyleMode,
+        getAlternateStyleAndAdvance = getAlternateStyleAndAdvance,
+    }
+    logger.info(LOG_TAG, "已启用样式解耦测试钩子（book_receipt_dev_test）")
 end
