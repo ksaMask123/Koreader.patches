@@ -4403,8 +4403,16 @@ local Screensaver = require("ui/screensaver")
 local orig_screensaver_show = Screensaver.show
 
 Screensaver.show = function(self)
-    if self.screensaver_type ~= "book_receipt" then
+    -- 兼容 miuread：其 setup 钩子会把 self.screensaver_type 篡改为 "cover"，
+    -- 但在 setup() 返回前已把 G_reader_settings 还原为用户真值；show() 紧随 setup()
+    -- 同步调用，故此处直接读 G_reader_settings 判断用户是否选了 book_receipt，
+    -- 不依赖可能被污染的 self.screensaver_type。
+    local user_wants_book_receipt = G_reader_settings:readSetting("screensaver_type") == "book_receipt"
+    if not user_wants_book_receipt and self.screensaver_type ~= "book_receipt" then
         return orig_screensaver_show(self)
+    end
+    if user_wants_book_receipt then
+        self.screensaver_type = "book_receipt"
     end
 
     local ui = self.ui or ReaderUI.instance
