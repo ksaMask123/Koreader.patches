@@ -7,7 +7,7 @@
 --   · 休眠锁屏（screensaver_type = book_receipt）同样支持两样式随机 / 轮流，均可作锁屏壁纸
 --   · 小票内小花图标（✿）点击跳转 Reading Insights 阅读洞察插件
 --   · 墨痕壁纸引擎整合自 inkstain.koplugin，已彻底剔除 Miuread（觅阅）相关代码，
---     数据源固定为 KOReader 阅读统计，渲染为内存 BlitBuffer（不写盘、无定时器、无网络）
+--     数据源固定为 KOReader 阅读统计，渲染为内存 BlitBuffer（渲染路径不写盘、无定时器；加载期会复制墨痕字体到 fonts/ 目录，小花点击经 UIManager:scheduleIn 延迟广播 Reading Insights 事件；无网络）
 -- 日志 TAG：LOG_TAG = "[BookReceipt]"（全部运行日志写入 crash.log 便于溯源）
 -- 依赖：KOReader 核心模块（见 require 列表）+ inkstain.koplugin 的 assets 资源
 --       （字体 huiwen_ming.otf、二维码 github_qr.png，缺失时自动降级处理）
@@ -1018,7 +1018,7 @@ local function buildFilmReceipt(ui, state, on_close_callback)
                     end)
                     if not ok then
                         UIManager:show(InfoMessage:new{ text = _("无法打开阅读洞察，请确认插件已正确安装") })
-                        logger.warn("Book receipt: open reading insights failed:", err)
+                        logger.warn(LOG_TAG, "open reading insights failed:", err)
                     end
                 end)
             end,
@@ -3628,7 +3628,6 @@ end
 local function getInkStainAssetPath(asset_name)
     local data_dir = DataStorage:getDataDir()
     local candidates = {
-        "./plugins/inkstain.koplugin",
         data_dir .. "/plugins/inkstain.koplugin",
         data_dir .. "/../plugins/inkstain.koplugin",
     }
@@ -4367,8 +4366,8 @@ function quicklookbox:init()
     end
 end
 
-function quicklookbox:onTap() self:onClose() end
-function quicklookbox:onSwipe(arg, ges_ev) self:onClose() end
+function quicklookbox:onTap() return self:onClose() end
+function quicklookbox:onSwipe(arg, ges_ev) return self:onClose() end
 function quicklookbox:onClose()
     UIManager:close(self)
     UIManager:setDirty(nil, "full")
@@ -4402,6 +4401,8 @@ end
 local Screensaver = require("ui/screensaver")
 local orig_screensaver_show = Screensaver.show
 
+if not Screensaver._book_receipt_patched then
+Screensaver._book_receipt_patched = true
 Screensaver.show = function(self)
     -- 兼容 miuread：其 setup 钩子会把 self.screensaver_type 篡改为 "cover"，
     -- 但在 setup() 返回前已把 G_reader_settings 还原为用户真值；show() 紧随 setup()
@@ -4492,19 +4493,30 @@ Screensaver.show = function(self)
         showFallbackScreensaver(self, orig_screensaver_show)
     end
 end
+end
 
 -- ========== 菜单挂载 ==========
 -- 通过拦截 dofile 解析菜单的机制，把阅读小票选项塞进原生的"屏保"设置菜单中
 local orig_dofile = dofile
 _G.dofile = function(filepath)
-    local result = orig_dofile(filepath)
+    local ok, result = pcall(orig_dofile, filepath)
+    if not ok then
+        logger.warn(LOG_TAG, "dofile failed for", tostring(filepath), ":", result)
+        return nil
+    end
 
     if filepath and filepath:match("screensaver_menu%.lua$") then
+        local ok_inject, err_inject = pcall(function()
         if result and result[1] and result[1].sub_item_table then
             local wallpaper_submenu = result[1].sub_item_table
+            -- 幂等守卫：本补丁菜单项已存在则跳过，避免菜单重建/重开时重复插入
+            local br_marker = _("Show book receipt on sleep screen")
+            for _, item in ipairs(wallpaper_submenu) do
+                if item.text == br_marker then return end
+            end
 
             -- 通用单选菜单项生成器（保存设置键值并显示勾选状态）
-            local function genMenuItem(text, setting, value, enabled_func, separator)
+            local function genMenuItem(text, setting, value, enabled_func)
                 return {
                     text = text,
                     enabled_func = enabled_func,
@@ -4515,7 +4527,6 @@ _G.dofile = function(filepath)
                         G_reader_settings:saveSetting(setting, value)
                     end,
                     radio = true,
-                    separator = separator,
                 }
             end
 
@@ -4796,6 +4807,10 @@ _G.dofile = function(filepath)
                     inkstain_settings_menu,
                 },
             })
+        end
+        end)
+        if not ok_inject then
+            logger.warn(LOG_TAG, "screensaver menu injection failed:", err_inject)
         end
     end
 
