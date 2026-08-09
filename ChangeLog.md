@@ -1,5 +1,13 @@
 # 阅读小票 + 锁屏壁纸（胶片票根 / 墨痕壁纸 / 菜单样式）更新日志
 
+## [2026-08-09 维护性修复]
+- 补丁健壮性修复（代码审查驱动，最小化修改，全部经 LuaJIT `loadfile` 语法校验通过）：
+  - `_G.dofile` 覆写：`orig_dofile` 调用包 `pcall`，注入体整体 `pcall` + 幂等扫描 `br_marker`（菜单项已存在则跳过），杜绝上游菜单结构变动/重入时抛错阻断 UI、重复插项。
+  - `Screensaver.show` 加 `_book_receipt_patched` 幂等守卫，防止重复包装。
+  - 移除脆弱的相对资源路径 `./plugins/inkstain.koplugin`，仅保留 `DataStorage` 绝对路径。
+  - 文件头声明修正为与实现一致（渲染不写盘、无定时器；加载期写字体、延迟广播；无网络）。
+  - `logger.warn` 补 `LOG_TAG`（与另一处一致）；`onTap`/`onSwipe` 补 `return self:onClose()` 消费事件；`genMenuItem` 删未用死参 `separator`。
+
 ## [v2.5.1]
 - 修复手势/锁屏样式分离未生效的问题：`Screensaver.show` 调用 `buildReceipt` 时漏传 `context` 参数，导致锁屏固定显示手势样式（锁屏“轮流出现”失效）。改为调用方解析一次 `style` 后直接传入，根治轮流模式被预检与渲染双重推进跳样式的隐患。
 
