@@ -50,6 +50,9 @@
 --           context 导致锁屏固定显示手势样式（锁屏"轮流出现"失效）；buildReceipt 改为
 --           调用方解析一次 style 后直接传入，同时根治轮流模式被 is_stat_based 预检与
 --           渲染双重推进跳样式的隐患（锁屏轮流由跳档修复为顺序推进）
+--   v2.5.2  修复解析日志 %d 未格式化：parseQuotationText / parsePoemText 的 logger.dbg/info
+--           调用误用 printf 风格占位符（KOReader logger 仅 tostring 拼接、不格式化），
+--           导致日志输出"共%d条 200"；改为 string.format 包裹，日志正确显示"共200条"。
 --   v2.4.5  轮流模式泛化为 N 样式顺序循环（film→inkstain→menu），首次调用回落首样式
 --   v2.4.4  墨痕底部布局改为表格锚定：表格区恒按 5 本预留高度（无书/少书时留白、
 --           分隔线位置稳定），分隔线紧贴书单底部仅留小缝隙；底部区块整体上移、
@@ -3078,7 +3081,7 @@ local function parseQuotationText()
         end
     end
     quotation_cache = list
-    logger.dbg(LOG_TAG, "名言解析完成：共%d条", #list)
+    logger.dbg(LOG_TAG, string.format("名言解析完成：共%d条", #list))
     return list
 end
 
@@ -3134,7 +3137,7 @@ local function parsePoemText()
         end
     end
     poem_cache = list
-    logger.info(LOG_TAG, "诗词解析完成：共%d条", #list)
+    logger.info(LOG_TAG, string.format("诗词解析完成：共%d条", #list))
     return list
 end
 
