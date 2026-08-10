@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BookReceipt 补丁更新日志</title>
+<style>
+  :root{
+    --bg:#1e1e1e; --panel:#252526; --panel2:#2d2d30; --border:#3c3c3c;
+    --text:#d4d4d4; --muted:#9aa0a6; --accent:#4ec9b0; --accent2:#569cd6;
+    --warn:#d7a13b; --ok:#6abf69;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Segoe UI",-apple-system,"Microsoft YaHei",sans-serif;line-height:1.6;padding:32px 18px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:24px;color:#fff;margin:0 0 4px;font-weight:600}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px}
+  .chip{background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+    padding:6px 12px;font-size:12px;color:var(--muted)}
+  .chip b{color:var(--text);font-weight:600}
+  h2{font-size:17px;color:var(--accent);margin:28px 0 12px;border-left:3px solid var(--accent);
+    padding-left:10px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px}
+  .card .t{color:var(--accent2);font-weight:600;font-size:14px;margin-bottom:6px}
+  .card p{margin:6px 0;font-size:14px}
+  code{background:#1b1b1b;border:1px solid var(--border);border-radius:4px;
+    padding:1px 6px;font-family:"Cascadia Code",Consolas,monospace;font-size:13px;color:#ce9178}
+  pre{background:#1b1b1b;border:1px solid var(--border);border-radius:6px;padding:12px 14px;
+    overflow-x:auto;font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;color:#d4d4d4}
+  .tl{position:relative;margin-left:8px;padding-left:26px;border-left:2px solid var(--border)}
+  .tl .node{position:relative;margin-bottom:22px}
+  .tl .node::before{content:"";position:absolute;left:-33px;top:4px;width:12px;height:12px;
+    border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  .tl .date{color:var(--accent);font-size:13px;font-weight:600}
+  .tl .title{color:#fff;font-size:15px;font-weight:600;margin:2px 0 6px}
+  .tl .body{font-size:13.5px;color:var(--text)}
+  .tag{display:inline-block;background:rgba(78,201,176,.15);color:var(--accent);
+    border:1px solid rgba(78,201,176,.4);border-radius:4px;padding:1px 8px;font-size:11px;margin-right:6px}
+  .badge{display:inline-block;border-radius:4px;padding:2px 10px;font-size:12px;font-weight:600}
+  .badge.ok{background:rgba(106,191,105,.15);color:var(--ok);border:1px solid rgba(106,191,105,.4)}
+  .badge.pending{background:rgba(215,161,59,.15);color:var(--warn);border:1px solid rgba(215,161,59,.4)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  td,th{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600}
+  td.k{color:var(--muted);white-space:nowrap;width:120px}
+  footer{color:var(--muted);font-size:11.5px;margin-top:30px;text-align:center}
+  .diff-old{color:#f48771}
+  .diff-new{color:#6abf69}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>BookReceipt 补丁 · 更新日志</h1>
+  <div class="sub">运行时补丁 patches/2-book-receipt-shortcut-and-lockscreen.lua · 阅读小票 + 锁屏壁纸</div>
+  <div class="meta">
+    <span class="chip">当前版本 <b>v2.5.2</b></span>
+    <span class="chip">上一版本 <b>v2.5.1</b></span>
+    <span class="chip">本次修改文件 <b>2-book-receipt-shortcut-and-lockscreen.lua</b></span>
+    <span class="chip">修改日期 <b>2026-08-09</b></span>
+  </div>
+
+  <h2>本次修改（v2.5.1 → v2.5.2）</h2>
+  <div class="card">
+    <div class="t">① 名言解析日志 %d 未格式化（parseQuotationText）</div>
+    <p>源码行 3084，将：</p>
+    <pre><span class="diff-old">- logger.dbg(LOG_TAG, "名言解析完成：共%d条", #list)</span>
+<span class="diff-new">+ logger.dbg(LOG_TAG, string.format("名言解析完成：共%d条", #list))</span></pre>
+  </div>
+  <div class="card">
+    <div class="t">② 诗词解析日志 %d 未格式化（parsePoemText）</div>
+    <p>源码行 3140，将：</p>
+    <pre><span class="diff-old">- logger.info(LOG_TAG, "诗词解析完成：共%d条", #list)</span>
+<span class="diff-new">+ logger.info(LOG_TAG, string.format("诗词解析完成：共%d条", #list))</span></pre>
+  </div>
+  <div class="card">
+    <div class="t">③ 版本头追加 v2.5.2 条目</div>
+    <p>在版本记录段（源码行 53–55）新增 v2.5.2 说明。</p>
+  </div>
+
+  <h2>动机（为什么改）</h2>
+  <div class="card">
+    <p>依据 <code>crash.log</code> 行 62 实证：<code>[BookReceipt] 诗词解析完成：共%d条 200</code>。</p>
+    <p><b>根因</b>：KOReader 的 <code>logger</code>（frontend/logger.lua）在输出时对每个参数调用 <code>tostring()</code> 后 <code>table.concat(line, " ")</code> 拼接，
+       <b>不做 printf 风格格式化</b>。原代码把 <code>"…共%d条"</code> 当作格式串、把 <code>#list</code> 当作独立参数传入，
+       于是 <code>%d</code> 被原样输出，数量 <code>200</code> 沦为尾随 token。</p>
+    <p>修复方式：用 <code>string.format()</code> 在传入 logger 前完成格式化，日志将正确显示「共200条」。
+       这同样是代码库既有约定（其余 logger 调用均为纯拼接，格式化须显式处理）。</p>
+  </div>
+
+  <h2>影响范围</h2>
+  <table>
+    <tr><th>维度</th><th>说明</th></tr>
+    <tr><td class="k">运行时行为</td><td>仅修正日志输出格式，<b>无功能 / UI / 渲染变化</b>，不影响小票与锁屏壁纸的生成与展示。</td></tr>
+    <tr><td class="k">解析逻辑</td><td><code>parseQuotationText</code> / <code>parsePoemText</code> 的解析与缓存逻辑完全不变，仅日志语句改写。</td></tr>
+    <tr><td class="k">日志可读性</td><td>重启后 crash.log 中「名言解析完成」「诗词解析完成」两条日志将由「共%d条 N」变为「共N条」，消除误导噪声。</td></tr>
+    <tr><td class="k">兼容性</td><td>仅改动两处日志调用，向后兼容，无依赖新增。</td></tr>
+  </table>
+
+  <h2>校验结果</h2>
+  <div class="card">
+    <p><span class="badge ok">已通过</span> <b>LuaJIT 语法校验</b>：<code>loadfile()</code> 编译本补丁返回 SYNTAX OK（仅编译不执行，不触发 require 依赖）。</p>
+    <p><span class="badge pending">待真机验证</span> <b>日志格式</b>：重启 KOReader 后，crash.log 中上述两条日志应显示「共N条」且不再出现裸 <code>%d</code>。</p>
+  </div>
+
+  <h2>历史时间线</h2>
+  <div class="tl">
+    <div class="node">
+      <div class="date">2026-08-10</div>
+      <div class="title">部署 — 推送 v2.5.2 至 GitHub 仓库</div>
+      <div class="body"><span class="tag">部署</span>将本地 v2.5.2（含 %d 日志修复）同步到 <code>ksaMask123/Koreader.patches</code>（main 分支，新提交 SHA <code>8aa7de8…</code>）。此前 GitHub 仍停留修复前版本（较本地少 354 字节）。本次仅为代码上线，无行为变更，故不新增代码修改条目。</div>
+    </div>
+    <div class="node">
+      <div class="date">2026-08-09</div>
+      <div class="title">v2.5.2 — 修复解析日志 %d 未格式化</div>
+      <div class="body"><span class="tag">日志</span>两处 logger 调用加 string.format 包裹；LuaJIT 语法校验通过。</div>
+    </div>
+    <div class="node">
+      <div class="date">（前期）</div>
+      <div class="title">v2.5.1 — 修复手势/锁屏样式分离未生效</div>
+      <div class="body"><span class="tag">修复</span>Screensaver.show 的 buildReceipt 漏传 context，根治锁屏轮流跳样。</div>
+    </div>
+    <div class="node">
+      <div class="date">（前期）</div>
+      <div class="title">v2.5.0 — 手势/锁屏样式独立配置</div>
+      <div class="body"><span class="tag">解耦</span>锁屏新增独立键并从旧全局键单向迁移。</div>
+    </div>
+    <div class="node">
+      <div class="date">（前期）</div>
+      <div class="title">v2.4.13 — 修复点单设备双前缀</div>
+      <div class="body"><span class="tag">修复</span>getDeviceInfoString 增加 prefix 入参，消除二次拼接。</div>
+    </div>
+    <div class="node">
+      <div class="date">（前期）</div>
+      <div class="title">v2.4.12 — 诗词板块扩容至 200 条</div>
+      <div class="body"><span class="tag">内容</span>追加诗词第三版.txt，总量精确 200 条（与本次日志中的 200 对应）。</div>
+    </div>
+  </div>
+
+  <footer>本文件由 WorkBuddy 依「补丁修改须有专属 HTML 更新日志」约定生成 · 就近存档于项目 audit/ · 深色主题</footer>
+</div>
+</body>
+</html>
