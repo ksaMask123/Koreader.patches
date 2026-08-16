@@ -55,13 +55,58 @@
   <h1>BookReceipt 补丁 · 更新日志</h1>
   <div class="sub">运行时补丁 patches/2-book-receipt-shortcut-and-lockscreen.lua · 阅读小票 + 锁屏壁纸</div>
   <div class="meta">
-    <span class="chip">当前版本 <b>v2.5.2</b></span>
-    <span class="chip">上一版本 <b>v2.5.1</b></span>
+    <span class="chip">当前版本 <b>v2.5.4</b></span>
+    <span class="chip">上一版本 <b>v2.5.3</b></span>
     <span class="chip">本次修改文件 <b>2-book-receipt-shortcut-and-lockscreen.lua</b></span>
-    <span class="chip">修改日期 <b>2026-08-09</b></span>
+    <span class="chip">修改日期 <b>2026-08-16</b></span>
   </div>
 
-  <h2>本次修改（v2.5.1 → v2.5.2）</h2>
+  <h2>本次修改（v2.5.3 → v2.5.4）</h2>
+  <div class="card">
+    <div class="t">⑤ 修复胶片票根(film)无活动文档时回退为书籍封面屏保</div>
+    <p><b>GitHub issue</b>：KO3（Kindle PaperWhite 3）+ KOReader 2026.07.2-60，用户反馈胶片票根锁屏样式显示为书籍封面；墨痕(inkstain)与菜单(menu)两种样式正常。</p>
+    <p><b>根因定位</b>：</p>
+    <p>Screensaver.show 渲染路径（源码行 4427–4432）中：<code>is_stat_based</code> 仅对 inkstain/menu 为 true；film 被判定为非 stat_based 后，在 4429 行触发活动文档闸门——若睡眠时无打开的书籍（<code>ui.document == nil</code>，典型场景：从主屏/文件管理器锁屏），则调用 <code>showFallbackScreensaver</code> 回退到 KOReader 默认的书籍封面屏保。inkstain/menu 因跳过此闸门而永远正常。</p>
+    <p><b>修改内容</b>（源码行 4429–4434，新增 6 行）：</p>
+    <pre><span class="diff-old">-   local style = getLockscreenEffectiveStyle()
+-   local is_stat_based = style == K.STYLE_INKSTAIN or style == K.STYLE_MENU
+-   if not is_stat_based and not hasActiveDocument(ui) then
+-       showFallbackScreensaver(self, orig_screensaver_show)
+-       return
+-   end</span>
+<span class="diff-new">+   local style = getLockscreenEffectiveStyle()
++   local is_stat_based = style == K.STYLE_INKSTAIN or style == K.STYLE_MENU
++   -- 胶片票根(film)必须存在活动文档；若无则降级为墨痕(inkstain)渲染，
++   -- 避免回退到书籍封面屏保导致样式突变。
++   if style == K.STYLE_FILM and not hasActiveDocument(ui) then
++       style = K.STYLE_INKSTAIN
++       is_stat_based = true
++   end
++   if not is_stat_based and not hasActiveDocument(ui) then
++       showFallbackScreensaver(self, orig_screensaver_show)
++       return
++   end</span></pre>
+    <p><b>行为变更矩阵</b>：</p>
+    <table>
+      <tr><th>场景</th><th>修改前</th><th>修改后</th></tr>
+      <tr><td class="k">film + 有文档</td><td>正常渲染胶片票根 ✅</td><td>不变 ✅</td></tr>
+      <tr><td class="k">film + 无文档</td><td>❌ 书籍封面（fallback）</td><td>降级为墨痕壁纸（inkstain）✅</td></tr>
+      <tr><td class="k">inkstain/menu + 无文档</td><td>正常渲染 ✅</td><td>不变 ✅</td></tr>
+      <tr><td class="k">非 book_receipt 样式</td><td>走原屏保 ✅</td><td>不变 ✅</td></tr>
+    </table>
+    <p><b>方案选型</b>：方案 A（film→inkstain 降级），而非方案 B（显示占位提示）。理由：降级后用户仍看到"小票感"阅读统计壁纸，体验连续不突兀。</p>
+  </div>
+
+  <h2>历史修改（v2.5.2 → v2.5.3）</h2>
+  <div class="card">
+    <div class="t">④ dofile 拦截器失败日志 WARN→DBG（消除 crash.log 海量刷屏）</div>
+    <p>源码行 4507（菜单挂载段的 <code>_G.dofile</code> 全局劫持器），将：</p>
+    <pre><span class="diff-old">- logger.warn(LOG_TAG, "dofile failed for", tostring(filepath), ":", result)</span>
+<span class="diff-new">+ logger.dbg(LOG_TAG, "dofile failed for", tostring(filepath), ":", result)</span></pre>
+    <p>并补充注释说明：文件缺失 / 加载失败属常态（可选文件、l10n 多语言回退、<code>*.old</code> 备份探测、<code>_meta.lua</code> 缺失等），用 dbg 记录（默认不输出）以免刷屏；<code>return nil</code> 行为语义不变。</p>
+  </div>
+
+  <h2>历史修改（v2.5.1 → v2.5.2）</h2>
   <div class="card">
     <div class="t">① 名言解析日志 %d 未格式化（parseQuotationText）</div>
     <p>源码行 3084，将：</p>
@@ -101,11 +146,41 @@
   <h2>校验结果</h2>
   <div class="card">
     <p><span class="badge ok">已通过</span> <b>LuaJIT 语法校验</b>：<code>loadfile()</code> 编译本补丁返回 SYNTAX OK（仅编译不执行，不触发 require 依赖）。</p>
-    <p><span class="badge pending">待真机验证</span> <b>日志格式</b>：重启 KOReader 后，crash.log 中上述两条日志应显示「共N条」且不再出现裸 <code>%d</code>。</p>
+    <p><span class="badge ok">已通过</span> <b>E/G 盘一致性</b>：SHA256 校验和一致（<code>E4BA06D8…014</code>），修改已同步至 G:\koreader\patches\（KOReader 设备）。</p>
+    <p><span class="badge pending">待真机验证</span> <b>film 无文档降级路径</b>：在 KO3 上将锁屏样式设为 film → 从文件管理器（无打开书籍）→ 触发锁屏。预期显示墨痕壁纸(inkstain)而非书籍封面。此为本次修复的唯一新增路径，其余场景行为不变无需重测。</p>
+  </div>
+
+  <h2>回退预案（v2.5.4 ↔ 回退到 Plan A 之前）</h2>
+  <div class="card">
+    <p><span class="badge pending">当前在测</span> 设备当前部署 <b>v2.5.4（含 Plan A：film 无活动文档 → 墨痕壁纸）</b>。用户先真机验证此版效果；若效果不理想，可一键回退到 Plan A 之前的版本，无需重新改代码。</p>
+    <table class="meta">
+      <tr><td class="k">回退目标</td><td>Plan A 之前（行为等价于 v2.5.3 基线：film 无活动文档时仍回退书籍封面屏保）</td></tr>
+      <tr><td class="k">回退包路径</td><td><code>E:\Download\AIWorkshop\koreader\patches\Backup\2-book-receipt-shortcut-and-lockscreen.v2.5.3-rollback.lua</code></td></tr>
+      <tr><td class="k">当前版备份</td><td><code>E:\Download\AIWorkshop\koreader\patches\Backup\2-book-receipt-shortcut-and-lockscreen.v2.5.4-PlanA.lua</code>（回退后若想恢复 Plan A，用此包）</td></tr>
+      <tr><td class="k">差异核验</td><td><code>diff</code> 确认回退包与 v2.5.4 仅差 Plan A 降级块（L4434–4439，6 行）+ v2.5.4 版本头（3 行）；LuaJIT 语法校验通过（ROLLBACK_SYNTAX_OK）。</td></tr>
+    </table>
+    <p><b>回退操作步骤：</b></p>
+    <ol>
+      <li>KOReader 设备（G 盘）连接电脑；</li>
+      <li>将 <code>Backup\2-book-receipt-shortcut-and-lockscreen.v2.5.3-rollback.lua</code> <b>覆盖复制</b>到 <code>G:\koreader\patches\2-book-receipt-shortcut-and-lockscreen.lua</code>；</li>
+      <li>安全弹出设备，KOReader 中「重启」（或彻底退出重进）；</li>
+      <li>验证：film 样式 + 文件管理器锁屏 → 应恢复显示书籍封面（即回退成功）。</li>
+    </ol>
+    <p><span class="badge pending">注意</span> 回退仅撤销 Plan A 那一项修复；miuread 兼容守卫（L4405 区域）与其余历史修复均保留。回退后 GitHub issue 的「film 显示为封面」现象会重现——这是预期内的「回退态」，非新 bug。</p>
   </div>
 
   <h2>历史时间线</h2>
   <div class="tl">
+    <div class="node">
+      <div class="date">2026-08-16</div>
+      <div class="title">v2.5.4 — 修复 film 无活动文档时回退为封面屏保</div>
+      <div class="body"><span class="tag">修复</span>Screensaver.show 路径（L4429–4434）新增 film→inkstain 降级守卫：当胶片票根无活动文档时，将 style 降级为墨痕(inkstain)继续渲染，避免 showFallbackScreensaver 回退到书籍封面。GitHub issue 反馈者设备 KO3 + 2026.07.2-60。LuaJIT 语法校验通过；已同步至 G:\koreader\patches\；待真机验证「film + 文件管理器锁屏」场景。</div>
+    </div>
+    <div class="node">
+      <div class="date">2026-08-10</div>
+      <div class="title">v2.5.3 — 修复 dofile 拦截器海量 WARN 刷屏</div>
+      <div class="body"><span class="tag">修复</span>第 4507 行 <code>logger.warn</code> → <code>logger.dbg</code>，仅改日志级别，行为零变更。消除 crash.log 中 4609 条 <code>dofile failed</code> 噪声（占全部 WARN 的 99%）。LuaJIT 语法校验通过；待真机重启验证 crash.log 不再刷屏。</div>
+    </div>
     <div class="node">
       <div class="date">2026-08-10</div>
       <div class="title">部署 — 推送 v2.5.2 至 GitHub 仓库</div>

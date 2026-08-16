@@ -53,6 +53,11 @@
 --   v2.5.2  修复解析日志 %d 未格式化：parseQuotationText / parsePoemText 的 logger.dbg/info
 --           调用误用 printf 风格占位符（KOReader logger 仅 tostring 拼接、不格式化），
 --           导致日志输出"共%d条 200"；改为 string.format 包裹，日志正确显示"共200条"。
+--   v2.5.3  修复 dofile 拦截器海量 WARN 刷屏：_G.dofile 劫持器的 logger.warn → logger.dbg
+--           （文件缺失/加载失败属常态，默认不输出），消除 crash.log 中数千条噪声。
+--   v2.5.4  修复胶片票根(film)无活动文档时回退为书籍封面屏保（GitHub issue）：
+--           Screensaver.show 路径新增 film→inkstain 降级守卫（L4429–4434），
+--           无书时降级为墨痕壁纸渲染而非 showFallbackScreensaver(cover)。
 --   v2.4.5  轮流模式泛化为 N 样式顺序循环（film→inkstain→menu），首次调用回落首样式
 --   v2.4.4  墨痕底部布局改为表格锚定：表格区恒按 5 本预留高度（无书/少书时留白、
 --           分隔线位置稳定），分隔线紧贴书单底部仅留小缝隙；底部区块整体上移、
@@ -4426,6 +4431,12 @@ Screensaver.show = function(self)
     --       与手势样式解耦；此处是报告方案容易遗漏的直接调用点，必须同步替换
     local style = getLockscreenEffectiveStyle()
     local is_stat_based = style == K.STYLE_INKSTAIN or style == K.STYLE_MENU
+    -- 胶片票根(film)必须存在活动文档；若无则降级为墨痕(inkstain)渲染，
+    -- 避免回退到书籍封面屏保导致样式突变（GitHub issue: KO3 film 样式显示为封面）。
+    if style == K.STYLE_FILM and not hasActiveDocument(ui) then
+        style = K.STYLE_INKSTAIN
+        is_stat_based = true
+    end
     if not is_stat_based and not hasActiveDocument(ui) then
         showFallbackScreensaver(self, orig_screensaver_show)
         return
@@ -4504,7 +4515,9 @@ local orig_dofile = dofile
 _G.dofile = function(filepath)
     local ok, result = pcall(orig_dofile, filepath)
     if not ok then
-        logger.warn(LOG_TAG, "dofile failed for", tostring(filepath), ":", result)
+        -- 文件缺失/加载失败是常态（可选文件、l10n 多语言回退、*.old 备份探测、_meta.lua 缺失等），
+        -- 用 dbg 记录（默认不输出）以免海量 WARN 刷满 crash.log；行为语义不变，仍返回 nil。
+        logger.dbg(LOG_TAG, "dofile failed for", tostring(filepath), ":", result)
         return nil
     end
 
